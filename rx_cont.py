@@ -32,9 +32,29 @@ import urllib.request
 BOARD.setup()
 
 parser = LoRaArgumentParser("Continous LoRa receiver.")
+message = {}
+key_dict = {1: 'Z17PK8KZUMTUV6P9'}
+sender_id = 0
 
-def send_thingspeak(data):
-    url = "https://api.thingspeak.com/update?api_key=Z17PK8KZUMTUV6P9&field1={}&field2={}".format(data['temp'], data['hum'])
+def format_message(json):
+    for key in json:
+        if(key != 'id'):
+            message[key] = json[key]
+        else:
+            global sender_id
+            sender_id = json[key]
+    print('Message received - Node ID {}: {}'.format(sender_id, message))
+
+
+def send_thingspeak():
+    #url = "https://api.thingspeak.com/update?api_key=Z17PK8KZUMTUV6P9&fisender_ideld1={}&field2={}".format(data['temp'], data['hum'])
+    url = "https://api.thingspeak.com/update?api_key=%s" % key_dict[sender_id]
+
+    i = 1
+    for key in message:
+        url += "&field{}={}".format(i, message[key])
+        i += 1
+        
     print(url)
     response = urllib.request.urlopen(url).read()
     print(response.decode())
@@ -50,15 +70,11 @@ class LoRaRcvCont(LoRa):
         print("\nRxDone")
         self.clear_irq_flags(RxDone=1)
         payload = self.read_payload(nocheck=True)
-        #print(bytes(payload))
-#        bytelist = bytes(payload)[1:-1]
-#        print(bytelist)
-#        for i in bytelist:
-#           print(i)
         str = ''.join(chr(i) for i in bytes(payload)[4:-1])
         js = json.loads(str)
         print(js)
-        send_thingspeak(js)
+        format_message(js)
+        send_thingspeak()
         self.set_mode(MODE.SLEEP)
         self.reset_ptr_rx()
         BOARD.led_off()
@@ -101,10 +117,11 @@ class LoRaRcvCont(LoRa):
 
 lora = LoRaRcvCont(verbose=False)
 args = parser.parse_args(lora)
-#lora.set_freq(920.36)
-#lora.set_coding_rate(CODING_RATE.CR4_6)
+
+#lora.set_freq(915)
+#lora.set_coding_rate(CODING_RATE.CR4_5)
 #lora.set_bw(BW.BW125)
-#lora.set_spreading_factor(12)
+#lora.set_spreading_factor(7)
 
 lora.set_mode(MODE.STDBY)
 lora.set_pa_config(pa_select=1)
