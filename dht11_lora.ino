@@ -1,3 +1,4 @@
+
 // Include the SX1272 and SPI library: 
 #include "SX1272.h"
 
@@ -10,20 +11,17 @@ String st;
 
 #define DHTPIN 5
 #define DHTTYPE    DHT11   
-
-char message1 [] = "Packet 1, wanting to see if received packet is the same as sent packet";
-char message2 [] = "Packet 2, broadcast test";
+#define NODEID 1
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
 uint32_t delayms = 20000;
+char packet[250];
 
 void setup()
 {
   delay(5000);
   dht.begin();
-  // Print a start message
-  Serial.write("SX1272 module and Raspberry Pi: send packets with ACK and retries\n");
   
   // Power ON the module
   e = sx1272.ON();
@@ -33,6 +31,7 @@ void setup()
   //e = sx1272.setMode(4);
   //Serial.write("Setting Mode: state %d\n", e);
 
+  //Manually setting LoRa mode
   e = sx1272.setSF(7);
   e = sx1272.setBW(BW_125);
   e = sx1272.setCR(CR_5);
@@ -42,12 +41,12 @@ void setup()
   e = sx1272.setHeaderON();
   Serial.write("Setting Header ON: state %d\n", e);
   
-  // Select frequency channel
+  // Select frequency channel (CH_12_900 = 915MHz)
   e = sx1272.setChannel(CH_12_900);
   Serial.write("Setting Channel: state %d\n", e);
   
   // Set CRC
-  e = sx1272.setCRC_OFF();
+  e = sx1272.setCRC_ON();
   Serial.write("Setting CRC ON: state %d\n", e);
   
   // Select output power (Max, High or Low)
@@ -75,7 +74,7 @@ void loop(void)
       Serial.print(event.temperature);
       Serial.println(F("°C"));
     }
-    st = "{\"temp\": ";
+    st = "{\"id\": " + String(NODEID) + ", \"temp\": ";
     st += String(event.temperature);
     // Get humidity event and print its value.
     dht.humidity().getEvent(&event);
@@ -100,5 +99,19 @@ void loop(void)
     
     sx1272.sendPacketMAXTimeout(0, buf, sizeof(buf));
     Serial.write("\nSending...\n");
+
+/*
+    //Downlink for 5 seconds
+    e = sx1272.receivePacketTimeoutACK(5000);
+    if( e == 0 )
+    {
+      for(unsigned int i = 0; i < sx1272.packet_received.length; i++)
+      {
+        packet[i]=(char)sx1272.packet_received.data[i];
+      }
+      Serial.println(packet);
+    }
+*/
+
     delay(delayms);
 }
