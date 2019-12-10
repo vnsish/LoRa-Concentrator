@@ -32,32 +32,37 @@ import urllib.request
 BOARD.setup()
 
 parser = LoRaArgumentParser("Continous LoRa receiver.")
-message = {}
-key_dict = {1: 'Z17PK8KZUMTUV6P9'}
+message = []
+api_key = ''
 sender_id = 0
+ts_key = ''
 
-def format_message(json):
-    for key in json:
-        if(key != 'id'):
-            message[key] = json[key]
-        else:
-            global sender_id
-            sender_id = json[key]
-    print('Message received - Node ID {}: {}'.format(sender_id, message))
+def format_message_new(str):
+    global message
+    global api_key
+
+    values = str.split(';')
+
+    sender_id = values[0]
+    api_key = values[1]
+    message = []
+
+    for value in range(2, len(values)):
+        message.append(values[value])
+
+    print('Message received - Node ID: {} - API Key: {} - Values: {}'.format(sender_id, api_key, message))
 
 
-def send_thingspeak():
-    #url = "https://api.thingspeak.com/update?api_key=Z17PK8KZUMTUV6P9&fisender_ideld1={}&field2={}".format(data['temp'], data['hum'])
-    url = "https://api.thingspeak.com/update?api_key=%s" % key_dict[sender_id]
-
+def send_thingspeak_new():
+    #url = "https://api.thingspeak.com/update?api_key=KEY&fisender_ideld1={}&field2={}".format(data['temp'], data['hum'])
+    url = "https://api.thingspeak.com/update?api_key={}".format(api_key)
     i = 1
-    for key in message:
-        url += "&field{}={}".format(i, message[key])
+    for value in message:
+        url += '&field{}={}'.format(i, value)
         i += 1
-        
-    print(url)
     response = urllib.request.urlopen(url).read()
-    print(response.decode())
+    print("\nHTTP Request: {}".format(url))
+    print("\nHTTP Response: {}".format(response.decode()))
 
 class LoRaRcvCont(LoRa):
     def __init__(self, verbose=False):
@@ -65,24 +70,43 @@ class LoRaRcvCont(LoRa):
         self.set_mode(MODE.SLEEP)
         self.set_dio_mapping([0] * 6)
 
+
+
     def on_rx_done(self):
         BOARD.led_on()
         print("\nRxDone")
         self.clear_irq_flags(RxDone=1)
         payload = self.read_payload(nocheck=True)
-        str = ''.join(chr(i) for i in bytes(payload)[4:-1])
-        js = json.loads(str)
-        print(js)
-        format_message(js)
-        send_thingspeak()
-        self.set_mode(MODE.SLEEP)
-        self.reset_ptr_rx()
-        BOARD.led_off()
-        self.set_mode(MODE.RXCONT)
 
+        #Get RSSI and SNR values
+        rssi = self.get_pkt_rssi_value()
+        snr = self.get_pkt_snr_value()
+        print('RSSI: {} / SNR: {}'.format(rssi, snr))
+        
+        #Discard header bytes from message
+        str = ''.join(chr(i) for i in bytes(payload)[4:-1])
+        print('Raw message: {}'.format(str))
+        format_message_new(str)
+        send_thingspeak_new()
+
+        #Set to TX mode
+        self.set_mode(MODE.STDBY)
+        self.set_dio_mapping([1,0,0,0,0,0])
+        print('sending')
+        self.write_payload([0, 16, 1, 8, 111, 107, 0])
+        self.set_mode(MODE.TX)
+        
     def on_tx_done(self):
         print("\nTxDone")
+        self.set_mode(MODE.STDBY)
         print(self.get_irq_flags())
+        sys.stdout.flush()
+        self.clear_irq_flags(TxDone=1)
+        self.set_mode(MODE.SLEEP)
+        self.set_dio_mapping([0] * 6)
+        self.reset_ptr_rx()
+        #back to RX mode on TX end
+        self.set_mode(MODE.RXCONT)
 
     def on_cad_done(self):
         print("\non_CadDone")
@@ -105,6 +129,7 @@ class LoRaRcvCont(LoRa):
         print(self.get_irq_flags())
 
     def start(self):
+
         self.reset_ptr_rx()
         self.set_mode(MODE.RXCONT)
         while True:
@@ -114,14 +139,13 @@ class LoRaRcvCont(LoRa):
             sys.stdout.flush()
             sys.stdout.write("\r%d %d %d" % (rssi_value, status['rx_ongoing'], status['modem_clear']))
 
-
 lora = LoRaRcvCont(verbose=False)
 args = parser.parse_args(lora)
 
-#lora.set_freq(915)
-#lora.set_coding_rate(CODING_RATE.CR4_5)
-#lora.set_bw(BW.BW125)
-#lora.set_spreading_factor(7)
+lora.set_freq(915)
+lora.set_coding_rate(CODING_RATE.CR4_5)
+lora.set_bw(BW.BW125)
+lora.set_spreading_factor(10)
 
 lora.set_mode(MODE.STDBY)
 lora.set_pa_config(pa_select=1)

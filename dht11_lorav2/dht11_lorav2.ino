@@ -1,7 +1,6 @@
 
 // Include the SX1272 and SPI library: 
 #include "SX1272.h"
-
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
@@ -13,9 +12,15 @@ String st;
 #define DHTTYPE    DHT11   
 #define NODEID 1
 
+//set ThingSpeak API key here
+#define APIKEY "APIKEYHERE"
+
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
-uint32_t delayms = 20000;
+//ThingSpeak maximum rate: 1 message/15 seconds
+uint32_t delayms = 15000;
+
+//LoRa maximum packet size: 255 bytes
 char packet[250];
 
 void setup()
@@ -31,10 +36,16 @@ void setup()
   //e = sx1272.setMode(4);
   //Serial.write("Setting Mode: state %d\n", e);
 
+  pinMode(LED_BUILTIN, OUTPUT);
+
   //Manually setting LoRa mode
-  e = sx1272.setSF(7);
+  //Spreading Factor = 10
+  e = sx1272.setSF(10);
+  //Bandwidth = 125 Khz
   e = sx1272.setBW(BW_125);
+  //Coding Rate = 4/5
   e = sx1272.setCR(CR_5);
+  //Preamble Length = 8 (Default)
   e = sx1272.setPreambleLength(8);
   
   // Set header
@@ -59,59 +70,79 @@ void setup()
   
   // Print a success message
   Serial.write("SX1272 successfully configured\n\n");
- delay(1000);
+  
+  delay(1000);
 }
 
 void loop(void)
 {
     sensors_event_t event;
     dht.temperature().getEvent(&event);
+    
+    //Start building message - Message template: 'NODEID;APIKEY;temp_value;hum_value'
+    st = String(NODEID) + ";" + APIKEY;
+    
     if (isnan(event.temperature)) {
       Serial.println(F("Error reading temperature!"));
+      st += ";" + String(-1);
     }
     else {
+      
+      st += ";" + String(event.temperature);
       Serial.print(F("Temperature: "));
       Serial.print(event.temperature);
       Serial.println(F("°C"));
-    }
-    st = "{\"id\": " + String(NODEID) + ", \"temp\": ";
-    st += String(event.temperature);
-    // Get humidity event and print its value.
+      }
+      
     dht.humidity().getEvent(&event);
     if (isnan(event.relative_humidity)) {
       Serial.println(F("Error reading humidity!"));
+    st += ";" + String(-1);
+    
     }
     else {
       Serial.print(F("Humidity: "));
       Serial.print(event.relative_humidity);
       Serial.println(F("%"));
+    st += ";" + String(event.relative_humidity);
+    
     }
 
-
-    st += ", \"hum\": ";
-    st += String(event.relative_humidity);
-    st += "}";
     char buf[st.length()+1];
 
     st.toCharArray(buf, st.length()+1);
     
     Serial.print(buf);
     
+    //Send LoRa packet
     sx1272.sendPacketMAXTimeout(0, buf, sizeof(buf));
     Serial.write("\nSending...\n");
+  
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+    digitalWrite(LED_BUILTIN, LOW);  
 
-/*
-    //Downlink for 5 seconds
-    e = sx1272.receivePacketTimeoutACK(5000);
+    //Downlink for a few seconds
+    e = sx1272.receivePacketTimeout(3000);
+
+    //No recipient verification, blink if _any_ message received - TODO: directed message? (is it possible?)
     if( e == 0 )
     {
       for(unsigned int i = 0; i < sx1272.packet_received.length; i++)
       {
-        packet[i]=(char)sx1272.packet_received.data[i];
+          packet[i]=(char)sx1272.packet_received.data[i];
       }
       Serial.println(packet);
+
+      digitalWrite(LED_BUILTIN, HIGH); 
+      delay(100); 
+      digitalWrite(LED_BUILTIN, LOW); 
+      delay(100);     
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(100);
+      digitalWrite(LED_BUILTIN, LOW); 
     }
-*/
+
 
     delay(delayms);
 }
